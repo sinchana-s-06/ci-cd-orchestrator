@@ -1,0 +1,58 @@
+name: Full Pipeline
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  full-pipeline:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Restore dependencies
+        run: dotnet restore OrchestratorSolution.slnx
+
+      - name: Build solution
+        run: dotnet build OrchestratorSolution.slnx --configuration Release --no-restore
+
+      - name: Run tests
+        run: dotnet test OrchestratorSolution.slnx --configuration Release --no-build
+
+      - name: Publish Orchestrator API
+        run: >
+          dotnet publish OrchestratorAPI/OrchestratorAPI.csproj
+          --configuration Release
+          --no-build
+          --output artifacts/orchestrator-api
+
+      - name: Publish Orchestrator UI
+        run: >
+          dotnet publish OrchestratorUI/OrchestratorUI.csproj
+          --configuration Release
+          --no-build
+          --output artifacts/orchestrator-ui
+
+      - name: Publish Test App
+        run: >
+          dotnet publish TestApp/TestApp.csproj
+          --configuration Release
+          --no-build
+          --output artifacts/test-app
+
+      - name: Upload published applications
+        uses: actions/upload-artifact@v4
+        with:
+          name: full-pipeline-build-${{ github.run_number }}
+          path: artifacts/
+          if-no-files-found: error
+          retention-days: 14
