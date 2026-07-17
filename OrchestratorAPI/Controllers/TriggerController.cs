@@ -1,11 +1,12 @@
 using Microsoft.AspNetCore.Mvc;
+using OrchestratorAPI.Analyzer;
+using OrchestratorAPI.Data;
+using OrchestratorAPI.DecisionEngine;
+using OrchestratorAPI.GitHub;
 using OrchestratorAPI.Models;
 using OrchestratorAPI.State;
-using OrchestratorAPI.Analyzer;
-using OrchestratorAPI.DecisionEngine;
-using OrchestratorAPI.Execution;
 using Serilog;
-using OrchestratorAPI.Data;
+
 namespace OrchestratorAPI.Controllers
 {
     [ApiController]
@@ -15,96 +16,128 @@ namespace OrchestratorAPI.Controllers
         private readonly PipelineStateService _stateService;
         private readonly ChangeAnalyzer _analyzer;
         private readonly DecisionService _decision;
-        private readonly PipelineExecutor _executor;
+        private readonly GitHubActionsService _githubActionsService;
         private readonly AppDbContext _context;
 
         public TriggerController(
             PipelineStateService stateService,
             ChangeAnalyzer analyzer,
             DecisionService decision,
-            PipelineExecutor executor,
-            AppDbContext context)  
+            GitHubActionsService githubActionsService,
+            AppDbContext context)
         {
             _stateService = stateService;
             _analyzer = analyzer;
             _decision = decision;
-            _executor = executor;
-            _context = context; 
+            _githubActionsService = githubActionsService;
+            _context = context;
         }
 
         [HttpPost]
-   public async Task<IActionResult> TriggerPipeline([FromBody] ChangeData change)     
-{
-    // 🔹 Model validation check (automatic validation result)
-    if (!ModelState.IsValid)
-    {
-        return BadRequest(ModelState);
-    }
+        public async Task<IActionResult> TriggerPipeline(
+            [FromBody] ChangeData change,
+            CancellationToken cancellationToken)
+        {
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
 
-    // 🔹 Custom validation rules
-    if (change.FilesChanged.Count != change.NumberOfFiles)
-    {
-        return BadRequest("NumberOfFiles does not match FilesChanged count");
-    }
+            if (change.FilesChanged.Count != change.NumberOfFiles)
+            {
+                return BadRequest(
+                    "NumberOfFiles does not match FilesChanged count.");
+            }
 
-    if (change.DocsOnly && (change.BackendChanged || change.TestsChanged))
-    {
-        return BadRequest("DocsOnly cannot be true when backend or tests are changed");
-    }
+            if (change.DocsOnly &&
+                (change.BackendChanged || change.TestsChanged))
+            {
+                return BadRequest(
+                    "DocsOnly cannot be true when backend or tests are changed.");
+            }
 
-    Log.Information("Pipeline trigger received");
+            Log.Information("Intelligent pipeline trigger received.");
 
-    var level = _analyzer.Analyze(change);
-    var action = _decision.Decide(level);
+            var level = _analyzer.Analyze(change);
+            var action = _decision.Decide(level);
 
-   var run = new PipelineRun
-{
-    Status = "Initialized",
+            var run = new PipelineRun
+            {
+                Status = "Dispatching",
+                BackendChanged = change.BackendChanged,
+                TestsChanged = change.TestsChanged,
+                DocsOnly = change.DocsOnly,
+                NumberOfFiles = change.NumberOfFiles,
+                ChangeLevel = level,
+                Action = action
+            };
 
-    // 🔹 Change Data mapping
-    BackendChanged = change.BackendChanged,
-    TestsChanged = change.TestsChanged,
-    DocsOnly = change.DocsOnly,
-    NumberOfFiles = change.NumberOfFiles,
+            foreach (var file in change.FilesChanged)
+            {
+                run.Files.Add(new PipelineFile
+                {
+                    FileName = file
+                });
+            }
 
-    // 🔹 Decision mapping
-    ChangeLevel = level,
-    Action = action
-};
-   foreach (var file in change.FilesChanged)
-{
-    run.Files.Add(new PipelineFile
-    {
-        FileName = file
-    });
-}
-    _context.PipelineRuns.Add(run);
-    _context.SaveChanges();
+            _context.PipelineRuns.Add(run);
+            await _context.SaveChangesAsync(cancellationToken);
 
-    await _executor.ExecuteAsync(action, run);
+            try
+            {
+                await _githubActionsService.TriggerWorkflowAsync(
+                    action,
+                    cancellationToken);
 
-    return Ok(new
-    {
-        Message = "Pipeline executed successfully",
-        Level = level,
-        Action = action,
-        RunId = run.Id
-    });
-}
+                run.Status = "Queued";
+                await _context.SaveChangesAsync(cancellationToken);
+
+                return Accepted(new
+                {
+                    Message = "Pipeline selected and dispatched to GitHub Actions.",
+                    Level = level,
+                    Action = action,
+                    Status = run.Status,
+                    RunId = run.Id
+                });
+            }
+            catch (HttpRequestException ex)
+            {
+                run.Status = "DispatchFailed";
+                await _context.SaveChangesAsync(cancellationToken);
+
+                Log.Error(
+                    ex,
+                    "Failed to dispatch pipeline run {RunId}",
+                    run.Id);
+
+                return StatusCode(
+                    StatusCodes.Status502BadGateway,
+                    new
+                    {
+                        Error = "GitHub Actions workflow dispatch failed.",
+                        Details = ex.Message,
+                        Level = level,
+                        Action = action,
+                        RunId = run.Id
+                    });
+            }
+        }
+
         [HttpGet("runs")]
         public IActionResult GetRuns()
         {
             return Ok(_stateService.GetAllRuns());
         }
 
-        [HttpGet("run/{id}")]
+        [HttpGet("run/{id:guid}")]
         public IActionResult GetRunById(Guid id)
         {
             var run = _stateService.GetRunById(id);
 
             if (run == null)
             {
-                return NotFound("Run not found");
+                return NotFound("Run not found.");
             }
 
             return Ok(run);
