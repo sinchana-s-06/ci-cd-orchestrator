@@ -18,14 +18,14 @@ namespace OrchestratorAPI.Controllers
             _logger = logger;
         }
 
-        [HttpPost("trigger/{action}")]
+        [HttpPost("trigger/{pipelineAction}")]
         public async Task<IActionResult> TriggerWorkflow(
-            string action,
+            string pipelineAction,
             CancellationToken cancellationToken)
         {
             try
             {
-                var normalizedAction = action
+                var normalizedAction = pipelineAction
                     .Trim()
                     .Replace("-", "_")
                     .ToUpperInvariant();
