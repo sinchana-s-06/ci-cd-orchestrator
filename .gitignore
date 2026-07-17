@@ -1,0 +1,43 @@
+# macOS
+.DS_Store
+
+# .NET build output
+**/bin/
+**/obj/
+
+# User-specific IDE files
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+.vs/
+.vscode/
+
+# JetBrains
+.idea/
+*.sln.iml
+
+# Local databases
+*.db
+*.db-shm
+*.db-wal
+
+# Logs
+*.log
+logs/
+
+# Environment and secrets
+.env
+.env.*
+appsettings.Development.json
+
+# Node / frontend
+**/node_modules/
+**/dist/
+**/.vite/
+
+# Test results and coverage
+TestResults/
+coverage/
+*.coverage
+*.coveragexml

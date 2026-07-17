@@ -1,0 +1,400 @@
+@page
+@model OrchestratorUI.Pages.DashboardModel
+
+<!-- ✅ MAIN CONTAINER -->
+<div style="max-width:1100px; margin:auto; padding:20px;">
+
+    <!-- HEADER -->
+  <h2 style="
+    margin-top:20px;
+    font-size:28px;
+    font-weight:700;
+    background:linear-gradient(90deg, #22c55e, #38bdf8);
+    -webkit-background-clip:text;
+    -webkit-text-fill-color:transparent;
+    letter-spacing:0.5px;
+">
+    Welcome to CI/CD Orchestrator
+</h2>
+<p style="
+    color:#64748b;
+    margin-top:6px;
+    font-size:14px;
+">
+    Monitor and trigger your pipelines in real-time
+</p>
+
+    <!-- TRIGGER CARD -->
+    <div style="
+    margin-top:30px;
+    background:linear-gradient(145deg,#1e293b,#0f172a);
+    padding:28px;
+    border-radius:18px;
+    box-shadow: 0 12px 35px rgba(0,0,0,0.45);
+    border:1px solid #334155;
+">
+
+    <h3 style="
+        color:white;
+        margin-bottom:14px;
+        font-weight:600;
+        letter-spacing:0.5px;
+    ">
+        🚀 Trigger Pipeline
+    </h3>
+
+    <input id="filesInput"
+           type="text"
+           placeholder="Enter changed files (e.g. backend.cs, test.cs)"
+           style="
+                width:100%;
+                padding:14px;
+                margin-top:10px;
+                background:#334155;
+                color:white;
+                border:1px solid #475569;
+                border-radius:10px;
+                outline:none;
+                font-size:14px;
+                transition:all 0.2s ease;
+           "
+           onfocus="this.style.border='1px solid #22c55e'"
+           onblur="this.style.border='1px solid #475569'"
+    />
+
+    <button onclick="triggerPipeline()"
+            style="
+                margin-top:18px;
+                padding:12px 20px;
+                background:#22c55e;
+                color:white;
+                border:none;
+                border-radius:10px;
+                font-weight:600;
+                cursor:pointer;
+                transition:all 0.2s ease;
+            "
+            onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 6px 15px rgba(34,197,94,0.4)'"
+            onmouseout="this.style.transform='none'; this.style.boxShadow='none'"
+    >
+        Trigger Pipeline
+    </button>
+
+    <div id="resultBox" style="
+        margin-top:18px;
+        background:#334155;
+        padding:14px;
+        border-radius:10px;
+        color:white;
+        font-size:14px;
+        border:1px solid #475569;
+    "></div>
+
+</div>
+
+<!-- SUMMARY CARDS -->
+<div style="
+    display:grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap:18px;
+    margin-top:30px;
+">
+
+    <!-- Total Runs -->
+    <div style="
+        background:linear-gradient(145deg,#1e293b,#0f172a);
+        padding:22px;
+        border-radius:16px;
+        box-shadow:0 8px 25px rgba(0,0,0,0.35);
+        border:1px solid #334155;
+        transition:all 0.25s ease;
+    "
+    onmouseover="this.style.transform='translateY(-4px)'; this.style.boxShadow='0 12px 30px rgba(0,0,0,0.5)'"
+    onmouseout="this.style.transform='none'; this.style.boxShadow='0 8px 25px rgba(0,0,0,0.35)'"
+    >
+        <p style="color:#94a3b8; font-size:14px;">📊 Total Runs</p>
+        <h2 id="totalRuns" style="color:white; font-size:28px; margin-top:10px;">0</h2>
+    </div>
+
+    <!-- Running -->
+    <div style="
+        background:linear-gradient(145deg,#1e293b,#0f172a);
+        padding:22px;
+        border-radius:16px;
+        box-shadow:0 8px 25px rgba(0,0,0,0.35);
+        border:1px solid #334155;
+        transition:all 0.25s ease;
+    "
+    onmouseover="this.style.transform='translateY(-4px)'; this.style.boxShadow='0 12px 30px rgba(0,0,0,0.5)'"
+    onmouseout="this.style.transform='none'; this.style.boxShadow='0 8px 25px rgba(0,0,0,0.35)'"
+    >
+        <p style="color:#94a3b8; font-size:14px;">⚡ Running</p>
+        <h2 id="runningRuns" style="color:#facc15; font-size:28px; margin-top:10px;">0</h2>
+    </div>
+
+    <!-- Completed -->
+    <div style="
+        background:linear-gradient(145deg,#1e293b,#0f172a);
+        padding:22px;
+        border-radius:16px;
+        box-shadow:0 8px 25px rgba(0,0,0,0.35);
+        border:1px solid #334155;
+        transition:all 0.25s ease;
+    "
+    onmouseover="this.style.transform='translateY(-4px)'; this.style.boxShadow='0 12px 30px rgba(0,0,0,0.5)'"
+    onmouseout="this.style.transform='none'; this.style.boxShadow='0 8px 25px rgba(0,0,0,0.35)'"
+    >
+        <p style="color:#94a3b8; font-size:14px;">✅ Completed</p>
+        <h2 id="completedRuns" style="color:#22c55e; font-size:28px; margin-top:10px;">0</h2>
+    </div>
+
+    <!-- Failed -->
+    <div style="
+        background:linear-gradient(145deg,#1e293b,#0f172a);
+        padding:22px;
+        border-radius:16px;
+        box-shadow:0 8px 25px rgba(0,0,0,0.35);
+        border:1px solid #334155;
+        transition:all 0.25s ease;
+    "
+    onmouseover="this.style.transform='translateY(-4px)'; this.style.boxShadow='0 12px 30px rgba(0,0,0,0.5)'"
+    onmouseout="this.style.transform='none'; this.style.boxShadow='0 8px 25px rgba(0,0,0,0.35)'"
+    >
+        <p style="color:#94a3b8; font-size:14px;">❌ Failed</p>
+        <h2 id="failedRuns" style="color:#ef4444; font-size:28px; margin-top:10px;">0</h2>
+    </div>
+
+</div>
+<div style="margin-top:40px; margin-bottom:10px;">
+    <h4 style="
+        font-size:18px;
+        font-weight:600;
+        color:#1e293b;
+        letter-spacing:0.5px;
+    ">
+        📊 Pipeline History
+    </h4>
+
+    <div style="
+        height:2px;
+        width:100%;
+        background:linear-gradient(to right, #22c55e, transparent);
+        margin-top:6px;
+        border-radius:10px;
+    "></div>
+</div>
+
+<div style="
+    margin-top:12px;
+    background:#1e293b;
+    border-radius:12px;
+    overflow:hidden;
+    border:1px solid #334155;
+">
+
+    <div style="
+        max-height:420px;
+        overflow-y:auto;
+    ">
+        <table style="width:100%; border-collapse: collapse; color:white;">
+            <thead style="position:sticky; top:0; background:#1e293b;">
+                <tr style="border-bottom:2px solid #475569;">
+                    <th style="padding:12px;">Run ID</th>
+                    <th style="padding:12px;">Action</th>
+                    <th style="padding:12px;">Level</th>
+                    <th style="padding:12px;">Status</th>
+                </tr>
+            </thead>
+
+            <!-- 🔥 THIS WAS MISSING -->
+            <tbody id="historyTable"></tbody>
+
+        </table>
+    </div>
+
+</div>
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+    loadHistory();
+});
+
+async function triggerPipeline() {
+    const files = document.getElementById("filesInput").value;
+
+    const payload = {
+        filesChanged: files ? files.split(",") : [],
+        backendChanged: files.includes("backend"),
+        testsChanged: files.includes("test"),
+        docsOnly: files.includes("docs"),
+        numberOfFiles: files ? files.split(",").length : 0
+    };
+
+    try {
+        const response = await fetch("http://localhost:5117/trigger", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify(payload)
+        });
+
+        const data = await response.json();
+        console.log("TRIGGER RESPONSE:", data);
+
+        // ✅ ONLY display result (NO summary logic here)
+        document.getElementById("resultBox").innerHTML = `
+            <div style="background:#334155; padding:10px; border-radius:8px; color:white;">
+                <b>Action:</b> ${data.action}<br/>
+                <b>Level:</b> ${data.level}<br/>
+                <b>Run ID:</b> ${data.runId}
+            </div>
+        `;
+
+        // ✅ Refresh table + cards
+        loadHistory();
+
+    } catch (error) {
+        console.error("Trigger ERROR:", error);
+    }
+}
+  function getStageUI(status) {
+    const stages = ["Build", "Test", "Deploy"];
+
+    let activeIndex = -1;
+
+    if (status.includes("Build")) activeIndex = 0;
+    else if (status.includes("Test")) activeIndex = 1;
+    else if (status.includes("Deploy")) activeIndex = 2;
+
+    return stages.map((stage, index) => {
+        let bg = "#334155"; // dark grey
+        let text = "#94a3b8";
+
+        if (status.includes("Completed")) {
+            bg = "#22c55e";
+            text = "black";
+        }
+        else if (index === activeIndex) {
+            bg = "#facc15";
+            text = "black";
+        }
+        else if (index < activeIndex) {
+            bg = "#22c55e";
+            text = "black";
+        }
+
+        return `
+        <span style="
+            background:${bg};
+            color:${text};
+            padding:4px 10px;
+            border-radius:999px;
+            font-size:11px;
+            margin-right:6px;
+        ">
+            ${stage}
+        </span>`;
+    }).join("→");
+}
+
+async function loadHistory() {
+    try {
+        const response = await fetch("http://localhost:5117/trigger/runs");
+
+        if (!response.ok) {
+            throw new Error("Failed to fetch history");
+        }
+
+        const data = await response.json();
+        console.log("DATA:", data);
+        
+
+        
+        // ✅ CARDS
+        let total = data.length;
+        let running = data.filter(run => run.status && run.status.includes("Running")).length;
+        let completed = data.filter(run => run.status && run.status.includes("Completed")).length;
+        let failed = data.filter(run => run.status && run.status.includes("Failed")).length;
+
+        document.getElementById("totalRuns").innerText = total;
+        document.getElementById("runningRuns").innerText = running;
+        document.getElementById("completedRuns").innerText = completed;
+        document.getElementById("failedRuns").innerText = failed;
+
+        // ✅ keep your structure
+        let runningRows = "";
+        let completedRows = "";
+        let failedRows = "";
+
+        data.forEach(run => {
+
+            let statusColor = "#94a3b8";
+            if (run.status && run.status.includes("Running")) statusColor = "#facc15";
+            else if (run.status && run.status.includes("Completed")) statusColor = "#22c55e";
+            else if (run.status && run.status.includes("Failed")) statusColor = "#ef4444";
+            else if (run.status && run.status.includes("Initialized")) statusColor = "#38bdf8";
+
+            const textColor = (statusColor === "#facc15" || statusColor === "#22c55e")
+                ? "black"
+                : "white";
+
+            const status = `
+                <span style="
+                    background:${statusColor};
+                    color:${textColor};
+                    padding:4px 10px;
+                    border-radius:999px;
+                    font-weight:600;
+                    font-size:12px;
+                    display:inline-block;
+                    min-width:110px;
+                    text-align:center;
+                ">
+                    ${run.status || "N/A"}
+                </span>
+            `;
+
+            const row = `
+                <tr style="border-bottom:1px solid #475569; cursor:pointer;"
+                    onmouseover="this.style.background='#1e293b'"
+                    onmouseout="this.style.background='transparent'">
+
+                    <td style="padding:10px;">${run.id || "N/A"}</td>
+                    <td style="padding:10px;">${run.action || "N/A"}</td>
+                    <td style="padding:10px;">${run.changeLevel || "N/A"}</td>
+
+                    <td style="padding:10px;">
+                        ${status}
+                        <div style="margin-top:6px;">
+                            ${typeof getStageUI === "function" ? getStageUI(run.status) : ""}
+                        </div>
+                    </td>
+                </tr>
+            `;
+
+            if (run.status && run.status.includes("Running")) {
+                runningRows += row;
+            } else if (run.status && run.status.includes("Completed")) {
+                completedRows += row;
+            } else if (run.status && run.status.includes("Failed")) {
+                failedRows += row;
+            }
+        });
+
+        // ✅ FINAL FIX
+        let rows = "";
+        rows += runningRows;
+        rows += completedRows;
+        rows += failedRows;
+
+        document.getElementById("historyTable").innerHTML = rows;
+
+    } catch (error) {
+        console.error("ERROR:", error);
+    }
+
+}
+// 🔁 auto refresh
+setInterval(loadHistory, 1000);
+loadHistory();
+</script>

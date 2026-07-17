@@ -1,0 +1,34 @@
+@page "/Login"
+@model OrchestratorUI.Pages.LoginModel
+@{
+    Layout = null;
+}
+
+<div style="height:100vh; display:flex; justify-content:center; align-items:center; background:#0f172a;">
+    <div style="background:#1e293b; padding:40px; border-radius:16px; width:320px; text-align:center;">
+        
+        <h2 style="color:white;">CI/CD Orchestrator</h2>
+        <p style="color:#94a3b8;">Secure DevOps Dashboard</p>
+
+        <form method="post">
+
+    <input asp-for="Username" type="text" placeholder="Username" required 
+           style="width:100%; padding:10px; margin:10px 0; border-radius:8px; border:none; background:#334155; color:white;" />
+
+    <input asp-for="Password" type="password" placeholder="Password" required 
+           style="width:100%; padding:10px; margin:10px 0; border-radius:8px; border:none; background:#334155; color:white;" />
+
+    <button type="submit" 
+            style="width:100%; padding:10px; margin-top:15px; border:none; border-radius:8px; background:#22c55e; color:white;">
+        Login
+    </button>
+    @if (!string.IsNullOrEmpty(Model.ErrorMessage))
+{
+    <p style="color:#ef4444; margin-top:10px;">
+        @Model.ErrorMessage
+    </p>
+}
+
+</form>
+    </div>
+</div>
