@@ -32,21 +32,18 @@ jobs:
         run: >
           dotnet publish OrchestratorAPI/OrchestratorAPI.csproj
           --configuration Release
-          --no-build
           --output artifacts/orchestrator-api
 
       - name: Publish Orchestrator UI
         run: >
           dotnet publish OrchestratorUI/OrchestratorUI.csproj
           --configuration Release
-          --no-build
           --output artifacts/orchestrator-ui
 
       - name: Publish Test App
         run: >
           dotnet publish TestApp/TestApp.csproj
           --configuration Release
-          --no-build
           --output artifacts/test-app
 
       - name: Upload published applications
