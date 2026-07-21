@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using OrchestratorAPI.Data;
 using OrchestratorAPI.Models;
 
@@ -9,17 +10,24 @@ namespace OrchestratorAPI.GitHub
         private readonly IServiceScopeFactory _scopeFactory;
         private readonly GitHubStatusService _statusService;
         private readonly ILogger<GitHubRunSyncService> _logger;
+        private readonly TimeSpan _syncInterval;
 
         public GitHubRunSyncService(
-            IServiceScopeFactory scopeFactory,
-            GitHubStatusService statusService,
-            ILogger<GitHubRunSyncService> logger)
+        IServiceScopeFactory scopeFactory,
+        GitHubStatusService statusService,
+        IOptions<GitHubOptions> options,
+        ILogger<GitHubRunSyncService> logger)
+
         {
             _scopeFactory = scopeFactory;
             _statusService = statusService;
             _logger = logger;
-        }
 
+            _syncInterval = TimeSpan.FromSeconds(
+          options.Value.SyncIntervalSeconds);
+
+        } 
+         
         protected override async Task ExecuteAsync(
             CancellationToken stoppingToken)
         {
@@ -44,21 +52,10 @@ namespace OrchestratorAPI.GitHub
                         "An error occurred while synchronizing GitHub runs.");
                 }
 
-                try
-                {
-                    await Task.Delay(
-                        TimeSpan.FromSeconds(5),
-                        stoppingToken);
-                }
-                catch (OperationCanceledException)
-                    when (stoppingToken.IsCancellationRequested)
-                {
-                    break;
-                }
+                await Task.Delay(
+                _syncInterval,
+                stoppingToken);
             }
-
-            _logger.LogInformation(
-                "GitHub run synchronization service stopped.");
         }
 
         private async Task SynchronizeRunsAsync(
@@ -69,37 +66,94 @@ namespace OrchestratorAPI.GitHub
             var context =
                 scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
-            var activeRuns = await context.PipelineRuns
-                .Where(run =>
-                    run.GitHubRunId != null &&
-                    run.Status != "DispatchFailed" &&
-                    (
-                        run.Status == "Queued" ||
-                        run.Status == "Running" ||
-                        run.Status == "Dispatching" ||
-                        (
-                            run.CompletedAt == null &&
-                            (
-                                run.Status == "Succeeded" ||
-                                run.Status == "Failed" ||
-                                run.Status == "Cancelled"
-                            )
-                        )
-                    ))
-                .ToListAsync(cancellationToken);
+          var activeRuns = await context.PipelineRuns   
+    .Where(run =>
+        run.GitHubRunId != null &&
+        run.Status != "DispatchFailed" &&
+        (
+            run.Status == "Queued" ||
+            run.Status == "Running" ||
+            run.Status == "Dispatching" ||
+            (
+                run.CompletedAt == null &&
+                (
+                    run.Status == "Succeeded" ||
+                    run.Status == "Failed" ||
+                    run.Status == "Cancelled"
+                )
+            )
+        ))
+    .ToListAsync(cancellationToken);
 
             foreach (var run in activeRuns)
             {
                 try
                 {
-                    await SynchronizeRunAsync(
-                        run,
-                        cancellationToken);
-                }
-                catch (OperationCanceledException)
-                    when (cancellationToken.IsCancellationRequested)
-                {
-                    throw;
+                    var workflowRun =
+                        await _statusService.GetWorkflowRunByIdAsync(
+                            run.GitHubRunId!.Value,
+                            cancellationToken);
+
+                    if (workflowRun is null)
+                    {
+                        _logger.LogWarning(
+                            "GitHub run {GitHubRunId} was not found.",
+                            run.GitHubRunId);
+
+                        continue;
+                    }
+
+                    run.Status = MapGitHubStatus(
+                        workflowRun.Status,
+                        workflowRun.Conclusion);
+
+                    run.GitHubRunNumber = workflowRun.RunNumber;
+                    run.GitHubWorkflowName = workflowRun.Name;
+                    run.GitHubRunUrl = workflowRun.HtmlUrl;
+
+                    var jobs =
+                        await _statusService.GetWorkflowJobsAsync(
+                            run.GitHubRunId.Value,
+                            cancellationToken);
+
+                    _logger.LogInformation(
+                        "Run {RunId}: Status={Status}, Jobs={JobCount}, CompletedJobs={CompletedJobs}",
+                        run.Id,
+                        run.Status,
+                        jobs.Count,
+                        jobs.Count(job => job.CompletedAt.HasValue));
+
+                    UpdateStageStatuses(run, jobs);
+
+                    if (
+                        run.CompletedAt == null &&
+                        (
+                            run.Status == "Succeeded" ||
+                            run.Status == "Failed" ||
+                            run.Status == "Cancelled"
+                        ))
+                    {
+                        _logger.LogInformation(
+                            "Setting CompletedAt for run {RunId}.",
+                            run.Id);
+
+                        run.CompletedAt =
+                            jobs
+                                .Where(job => job.CompletedAt.HasValue)
+                                .Select(job => job.CompletedAt)
+                                .Max()
+                            ?? DateTime.UtcNow;
+                    }
+
+                    _logger.LogInformation(
+                        "Pipeline run {RunId} synchronized. " +
+                        "Overall: {Status}, Build: {BuildStatus}, " +
+                        "Test: {TestStatus}, Deploy: {DeployStatus}.",
+                        run.Id,
+                        run.Status,
+                        run.BuildStatus,
+                        run.TestStatus,
+                        run.DeployStatus);
                 }
                 catch (Exception ex)
                 {
@@ -110,90 +164,10 @@ namespace OrchestratorAPI.GitHub
                 }
             }
 
-            if (context.ChangeTracker.HasChanges())
+            if (activeRuns.Count > 0)
             {
                 await context.SaveChangesAsync(cancellationToken);
             }
-        }
-
-        private async Task SynchronizeRunAsync(
-            PipelineRun run,
-            CancellationToken cancellationToken)
-        {
-            var workflowRun =
-                await _statusService.GetWorkflowRunByIdAsync(
-                    run.GitHubRunId!.Value,
-                    cancellationToken);
-
-            if (workflowRun is null)
-            {
-                _logger.LogWarning(
-                    "GitHub run {GitHubRunId} was not found.",
-                    run.GitHubRunId);
-
-                return;
-            }
-
-            run.Status = MapGitHubStatus(
-                workflowRun.Status,
-                workflowRun.Conclusion);
-
-            run.GitHubRunNumber = workflowRun.RunNumber;
-            run.GitHubWorkflowName = workflowRun.Name;
-            run.GitHubRunUrl = workflowRun.HtmlUrl;
-
-            var jobs =
-                await _statusService.GetWorkflowJobsAsync(
-                    run.GitHubRunId.Value,
-                    cancellationToken);
-
-            UpdateStageStatuses(run, jobs);
-            SetCompletionTime(run, jobs);
-
-            _logger.LogInformation(
-                "Pipeline run {RunId} synchronized. " +
-                "Overall: {Status}, Build: {BuildStatus}, " +
-                "Test: {TestStatus}, Deploy: {DeployStatus}.",
-                run.Id,
-                run.Status,
-                run.BuildStatus,
-                run.TestStatus,
-                run.DeployStatus);
-        }
-
-        private static void SetCompletionTime(
-            PipelineRun run,
-            IReadOnlyCollection<GitHubJob> jobs)
-        {
-            if (run.CompletedAt != null ||
-                !IsTerminalStatus(run.Status))
-            {
-                return;
-            }
-
-            run.CompletedAt =
-                jobs
-                    .Where(job => job.CompletedAt.HasValue)
-                    .Select(job => job.CompletedAt)
-                    .Max()
-                ?? DateTime.UtcNow;
-        }
-
-        private static bool IsTerminalStatus(string? status)
-        {
-            return
-                string.Equals(
-                    status,
-                    "Succeeded",
-                    StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(
-                    status,
-                    "Failed",
-                    StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(
-                    status,
-                    "Cancelled",
-                    StringComparison.OrdinalIgnoreCase);
         }
 
         private static void UpdateStageStatuses(
@@ -241,9 +215,10 @@ namespace OrchestratorAPI.GitHub
 
         private static void SetApplicableStages(PipelineRun run)
         {
-            run.BuildStatus = PreserveCurrentStatus(
-                run.BuildStatus,
-                "NotStarted");
+            run.BuildStatus =
+                PreserveCurrentStatus(
+                    run.BuildStatus,
+                    "NotStarted");
 
             switch (run.Action?.Trim().ToUpperInvariant())
             {
@@ -253,31 +228,36 @@ namespace OrchestratorAPI.GitHub
                     break;
 
                 case "BUILD_AND_TEST":
-                    run.TestStatus = PreserveCurrentStatus(
-                        run.TestStatus,
-                        "NotStarted");
+                    run.TestStatus =
+                        PreserveCurrentStatus(
+                            run.TestStatus,
+                            "NotStarted");
 
                     run.DeployStatus = "NotApplicable";
                     break;
 
                 case "FULL_PIPELINE":
-                    run.TestStatus = PreserveCurrentStatus(
-                        run.TestStatus,
-                        "NotStarted");
+                    run.TestStatus =
+                        PreserveCurrentStatus(
+                            run.TestStatus,
+                            "NotStarted");
 
-                    run.DeployStatus = PreserveCurrentStatus(
-                        run.DeployStatus,
-                        "NotStarted");
+                    run.DeployStatus =
+                        PreserveCurrentStatus(
+                            run.DeployStatus,
+                            "NotStarted");
                     break;
 
                 default:
-                    run.TestStatus = PreserveCurrentStatus(
-                        run.TestStatus,
-                        "NotStarted");
+                    run.TestStatus =
+                        PreserveCurrentStatus(
+                            run.TestStatus,
+                            "NotStarted");
 
-                    run.DeployStatus = PreserveCurrentStatus(
-                        run.DeployStatus,
-                        "NotStarted");
+                    run.DeployStatus =
+                        PreserveCurrentStatus(
+                            run.DeployStatus,
+                            "NotStarted");
                     break;
             }
         }
@@ -286,11 +266,13 @@ namespace OrchestratorAPI.GitHub
             string? currentStatus,
             string defaultStatus)
         {
-            if (string.IsNullOrWhiteSpace(currentStatus) ||
+            if (
+                string.IsNullOrWhiteSpace(currentStatus) ||
                 string.Equals(
                     currentStatus,
                     "NotApplicable",
-                    StringComparison.OrdinalIgnoreCase))
+                    StringComparison.OrdinalIgnoreCase)
+            )
             {
                 return defaultStatus;
             }
@@ -327,7 +309,8 @@ namespace OrchestratorAPI.GitHub
                 return "Running";
             }
 
-            if (string.Equals(
+            if (
+                string.Equals(
                     status,
                     "queued",
                     StringComparison.OrdinalIgnoreCase) ||
@@ -338,7 +321,8 @@ namespace OrchestratorAPI.GitHub
                 string.Equals(
                     status,
                     "pending",
-                    StringComparison.OrdinalIgnoreCase))
+                    StringComparison.OrdinalIgnoreCase)
+            )
             {
                 return "Queued";
             }

@@ -29,5 +29,8 @@ namespace OrchestratorAPI.GitHub
         [Required]
         public string FullPipelineWorkflow { get; set; } =
             "full-pipeline.yml";
+
+       [Range(5, 3600)]
+     public int SyncIntervalSeconds { get; set; } = 30;
     }
 }
