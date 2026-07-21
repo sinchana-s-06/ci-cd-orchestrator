@@ -1,26 +1,53 @@
 using System.Net.Http.Headers;
-using OrchestratorAPI.GitHub;
-using Serilog;
-using OrchestratorAPI.State;
+using Microsoft.EntityFrameworkCore;
 using OrchestratorAPI.Analyzer;
+using OrchestratorAPI.Data;
 using OrchestratorAPI.DecisionEngine;
 using OrchestratorAPI.Execution;
-using Microsoft.EntityFrameworkCore;
-using OrchestratorAPI.Data;
+using OrchestratorAPI.GitHub;
+using OrchestratorAPI.State;
+using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
-builder.Services.Configure<GitHubOptions>(
-    builder.Configuration.GetSection(GitHubOptions.SectionName));
 
-// Register services
+// -----------------------------
+// Serilog
+// -----------------------------
+Log.Logger = new LoggerConfiguration()
+    .ReadFrom.Configuration(builder.Configuration)
+    .WriteTo.Console()
+    .CreateLogger();
+
+builder.Host.UseSerilog();
+
+// -----------------------------
+// GitHub Configuration
+// -----------------------------
+builder.Services
+    .AddOptions<GitHubOptions>()
+    .Bind(
+        builder.Configuration.GetSection(
+            GitHubOptions.SectionName))
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
+
+// -----------------------------
+// Application Services
+// -----------------------------
 builder.Services.AddScoped<PipelineStateService>();
 builder.Services.AddScoped<ChangeAnalyzer>();
 builder.Services.AddScoped<DecisionService>();
 builder.Services.AddScoped<PipelineExecutor>();
-builder.Services.AddHttpClient<GitHubActionsService>((serviceProvider, client) =>
+
+// -----------------------------
+// Shared GitHub HttpClient Configuration
+// -----------------------------
+static void ConfigureGitHubClient(
+    IServiceProvider serviceProvider,
+    HttpClient client)
 {
-    var configuration = serviceProvider
-        .GetRequiredService<IConfiguration>();
+    var configuration =
+        serviceProvider.GetRequiredService<IConfiguration>();
 
     var token = configuration["GitHub:Token"];
 
@@ -40,55 +67,91 @@ builder.Services.AddHttpClient<GitHubActionsService>((serviceProvider, client) =
     if (!string.IsNullOrWhiteSpace(token))
     {
         client.DefaultRequestHeaders.Authorization =
-            new AuthenticationHeaderValue("Bearer", token);
+            new AuthenticationHeaderValue(
+                "Bearer",
+                token);
     }
-});
+}
+
+// -----------------------------
+// GitHub Services
+// -----------------------------
+builder.Services.AddHttpClient<GitHubActionsService>(
+    ConfigureGitHubClient);
+
+builder.Services.AddHttpClient<GitHubStatusService>(
+    ConfigureGitHubClient);
+
+builder.Services.AddHostedService<GitHubRunSyncService>();
+
+// -----------------------------
+// Database
+// -----------------------------
+var connectionString =
+    builder.Configuration.GetConnectionString(
+        "OrchestratorDatabase")
+    ?? throw new InvalidOperationException(
+        "Connection string 'OrchestratorDatabase' was not found.");
 
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlite("Data Source=orchestrator.db"));
+  options.UseSqlite(connectionString));
+
+// -----------------------------
+// CORS
+// -----------------------------
+var allowedOrigins =
+    builder.Configuration
+        .GetSection("Cors:AllowedOrigins")
+        .Get<string[]>() ?? Array.Empty<string>();
 
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowUI",
-        policy =>
-        {
-            policy.WithOrigins("http://localhost:5179")
-                  .AllowAnyHeader()
-                  .AllowAnyMethod();
-        });
+    options.AddPolicy("AllowUI", policy =>
+    {
+        policy.WithOrigins(allowedOrigins)
+              .AllowAnyHeader()
+              .AllowAnyMethod();
+    });
 });
-    
-// Configure Serilog
-Log.Logger = new LoggerConfiguration()
-    .WriteTo.Console()
-    .CreateLogger();
 
-builder.Host.UseSerilog();
-
-// Add services
+// -----------------------------
+// ASP.NET Services
+// -----------------------------
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
 var app = builder.Build();
 
-// Pipeline
+// -----------------------------
+// Middleware
+// -----------------------------
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
     app.UseSwaggerUI();
 }
 
-// app.UseHttpsRedirection();
+app.UseHttpsRedirection();
 
 app.UseRouting();
-
 app.UseCors("AllowUI");
-
 app.UseAuthorization();
 
 app.MapControllers();
 
-app.MapGet("/", () => "Orchestrator Running");
+app.MapGet("/", () => Results.Ok(
+    new
+    {
+        service = "Intelligent CI/CD Orchestrator",
+        status = "Running"
+    }));
+
+app.MapGet("/health", () => Results.Ok(
+    new
+    {
+        status = "Healthy",
+        timestamp = DateTime.UtcNow
+    }));
 
 app.Run();

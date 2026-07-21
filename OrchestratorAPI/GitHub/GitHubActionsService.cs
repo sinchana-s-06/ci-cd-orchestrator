@@ -1,4 +1,3 @@
-using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using Microsoft.Extensions.Options;
 
@@ -9,18 +8,21 @@ namespace OrchestratorAPI.GitHub
         private readonly HttpClient _httpClient;
         private readonly GitHubOptions _options;
         private readonly ILogger<GitHubActionsService> _logger;
+        private readonly GitHubStatusService _statusService;
 
         public GitHubActionsService(
             HttpClient httpClient,
             IOptions<GitHubOptions> options,
-            ILogger<GitHubActionsService> logger)
+            ILogger<GitHubActionsService> logger,
+            GitHubStatusService statusService)
         {
             _httpClient = httpClient;
             _options = options.Value;
             _logger = logger;
+            _statusService = statusService;
         }
 
-        public async Task TriggerWorkflowAsync(
+        public async Task<GitHubWorkflowRun?> TriggerWorkflowAsync(
             string action,
             CancellationToken cancellationToken = default)
         {
@@ -57,12 +59,39 @@ namespace OrchestratorAPI.GitHub
                     errorBody);
 
                 throw new HttpRequestException(
-                    $"GitHub workflow trigger failed with status {(int)response.StatusCode}: {errorBody}");
+                    $"GitHub workflow trigger failed with status " +
+                    $"{(int)response.StatusCode}: {errorBody}");
             }
 
             _logger.LogInformation(
                 "GitHub workflow {WorkflowFile} was triggered successfully",
                 workflowFile);
+
+            // Give GitHub time to create the workflow run.
+            await Task.Delay(
+                TimeSpan.FromSeconds(2),
+                cancellationToken);
+
+            var workflowRun =
+                await _statusService.GetLatestWorkflowRunAsync(
+                    workflowFile,
+                    cancellationToken);
+
+            if (workflowRun is not null)
+            {
+                _logger.LogInformation(
+                    "GitHub Run ID: {RunId}, Status: {Status}",
+                    workflowRun.Id,
+                    workflowRun.Status);
+            }
+            else
+            {
+                _logger.LogWarning(
+                    "No GitHub workflow run was found for {WorkflowFile}",
+                    workflowFile);
+            }
+
+            return workflowRun;
         }
 
         private string GetWorkflowFile(string action)
@@ -96,6 +125,12 @@ namespace OrchestratorAPI.GitHub
             {
                 throw new InvalidOperationException(
                     "GitHub token is not configured.");
+            }
+
+            if (string.IsNullOrWhiteSpace(_options.Branch))
+            {
+                throw new InvalidOperationException(
+                    "GitHub branch is not configured.");
             }
         }
     }
