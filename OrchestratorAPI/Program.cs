@@ -1,5 +1,6 @@
 using System.Net.Http.Headers;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using OrchestratorAPI.Analyzer;
 using OrchestratorAPI.Data;
 using OrchestratorAPI.DecisionEngine;
@@ -120,6 +121,7 @@ builder.Services.AddCors(options =>
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+builder.Services.AddHealthChecks();
 
 var app = builder.Build();
 
@@ -147,11 +149,26 @@ app.MapGet("/", () => Results.Ok(
         status = "Running"
     }));
 
-app.MapGet("/health", () => Results.Ok(
-    new
+app.MapHealthChecks(
+    "/health",
+    new HealthCheckOptions
     {
-        status = "Healthy",
-        timestamp = DateTime.UtcNow
-    }));
+        ResponseWriter = async (context, report) =>
+        {
+            context.Response.ContentType = "application/json";
 
+            await context.Response.WriteAsJsonAsync(
+                new
+                {
+                    status = report.Status.ToString(),
+                    timestamp = DateTime.UtcNow,
+                    checks = report.Entries.Select(entry => new
+                    {
+                        name = entry.Key,
+                        status = entry.Value.Status.ToString()
+                    })
+                });
+        }
+    });
+   
 app.Run();
