@@ -33,7 +33,7 @@ appsettings.Development.json
 
 # Node / frontend
 **/node_modules/
-**/dist/
+frontend/dist/
 **/.vite/
 
 # Test results and coverage
