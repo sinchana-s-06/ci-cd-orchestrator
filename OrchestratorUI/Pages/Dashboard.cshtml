@@ -214,6 +214,9 @@
 
 </div>
 <script>
+const apiBase = window.location.hostname === "localhost"
+    ? "http://localhost:5117"
+    : "https://ci-cd-orchestrator.onrender.com";
 document.addEventListener("DOMContentLoaded", function () {
     loadHistory();
 });
@@ -257,7 +260,7 @@ async function triggerPipeline() {
     };
 
     try {
-        const response = await fetch("http://localhost:5117/trigger", {
+        const response = await fetch(`${apiBase}/trigger`, {
             method: "POST",
             headers: {
                 "Content-Type": "application/json"
@@ -387,7 +390,8 @@ function getStageUI(run) {
 async function loadHistory() {
     try {
         const response = await fetch(
-            "http://localhost:5117/trigger/runs"
+    `${apiBase}/trigger/runs`
+   );
         );
 
         if (!response.ok) {
