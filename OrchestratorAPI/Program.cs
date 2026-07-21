@@ -100,10 +100,19 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 // -----------------------------
 // CORS
 // -----------------------------
-var allowedOrigins =
+ var allowedOrigins =
     builder.Configuration
         .GetSection("Cors:AllowedOrigins")
-        .Get<string[]>() ?? Array.Empty<string>();
+        .Get<string[]>();
+
+if (allowedOrigins is null || allowedOrigins.Length == 0)
+{
+    allowedOrigins =
+    [
+        "http://localhost:5179",
+        "https://ci-cd-orchestrator-ui.onrender.com"
+    ];
+}
 
 builder.Services.AddCors(options =>
 {
