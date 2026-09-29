@@ -86,4 +86,4 @@ Repository Change
 
 ## Results
 
-The orchestrator successfully routes repository changes across three CI/CD execution paths—Quick Build, Build & Test, and Full Pipeline—based on detected change impact, while maintaining pipeline execution history and stage-level status tracking.
+The orchestrator successfully routes repository changes across three CI/CD execution paths—Quick Build, Build & Test, and Full Pipeline based on detected change impact, while maintaining pipeline execution history and stage level status tracking.
