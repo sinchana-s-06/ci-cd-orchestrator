@@ -152,6 +152,7 @@ Repository Change
 | Monitoring Dashboard |
 +----------------------+
 ```
+
 ## Technology Stack
 
 ### Backend
