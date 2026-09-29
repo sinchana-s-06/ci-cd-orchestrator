@@ -86,4 +86,4 @@ Repository Change
 
 ## Results
 
-Benchmark measurements comparing Quick Build, Build & Test, and Full Pipeline execution will be added after controlled testing.
+The orchestrator successfully routes repository changes across three CI/CD execution paths—Quick Build, Build & Test, and Full Pipeline—based on detected change impact, while maintaining pipeline execution history and stage-level status tracking.
